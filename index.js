@@ -1,97 +1,159 @@
-const jsonServer = require("json-server");
+const express = require("express");
 const cors = require("cors");
-const db = {
-  garage: [
-    {
-      name: "Tesla",
-      color: "#e6e6fa",
-      id: 1,
-    },
-    {
-      name: "BMW",
-      color: "#fede00",
-      id: 2,
-    },
-    {
-      name: "Mersedes",
-      color: "#6c779f",
-      id: 3,
-    },
-    {
-      name: "Ford",
-      color: "#ef3c40",
-      id: 4,
-    },
-  ],
-  winners: [
-    {
-      id: 1,
-      wins: 1,
-      time: 10,
-    },
-  ],
-};
 
-const server = jsonServer.create();
-const router = jsonServer.router(db);
-const middlewares = jsonServer.defaults();
+let garage = [
+  {
+    name: "Tesla",
+    color: "#e6e6fa",
+    id: 1,
+  },
+  {
+    name: "BMW",
+    color: "#fede00",
+    id: 2,
+  },
+  {
+    name: "Mersedes",
+    color: "#6c779f",
+    id: 3,
+  },
+  {
+    name: "Ford",
+    color: "#ef3c40",
+    id: 4,
+  },
+];
 
-const PORT = process.env.PORT || 3000;
+let winners = [
+  {
+    id: 1,
+    wins: 1,
+    time: 10,
+  },
+];
+
+const app = express();
+app.use(cors());
+app.use(express.json());
 
 const state = { velocity: {}, blocked: {} };
 
-server.use(middlewares);
-server.use(cors());
+app.get("/garage", (req, res) => {
+  res.append("X-Total-Count", garage.length);
+  res.append("Access-Control-Expose-Headers", "X-Total-Count");
+  const { _page, _limit } = req.query;
 
-const STATUS = {
-  STARTED: "started",
-  STOPPED: "stopped",
-  DRIVE: "drive",
-};
+  res.statusMessage = "OK";
+  if (_page && _limit) {
+    const chunk = garage.slice((_page - 1) * _limit, _page * _limit);
+    res.status(200).json(chunk);
+  } else {
+    res.status(200).json(garage);
+  }
+});
 
-server.patch("/engine", (req, res) => {
+app.get("/garage/:id", (req, res) => {
+  const car = garage.find((car) => car.id == Number(req.params.id));
+  if (!car) {
+    res.statusCode = 404;
+    res.statusMessage = "NOT FOUND";
+    return res.json({});
+  } else {
+    res.statusMessage = "OK";
+    res.status(200).json(car);
+  }
+});
+
+app.post("/garage", (req, res) => {
+  const idGenerator = () => {
+    return garage.length ? Math.max(...garage.map((car) => car.id)) + 1 : 0;
+  };
+
+  const car = (name = "Car", color = "#FFFFFF") => {
+    const obj = { id: idGenerator(), name: name, color: color };
+    return obj;
+  };
+
+  garage = garage.concat(car(req.body.name, req.body.color));
+  res.statusCode = 201;
+  res.statusMessage = "CREATED";
+  res.json(car(req.body.name, req.body.color));
+});
+
+app.delete("/garage/:id", (req, res) => {
+  const car = garage.find((car) => car.id == Number(req.params.id));
+  if (!car) {
+    res.status(404);
+    res.statusMessage = "NOT FOUND";
+    res.json({});
+  } else {
+    garage.forEach((car) => {
+      if (car.id == Number(req.params.id)) {
+        garage = garage.filter((car) => car.id !== Number(req.params.id));
+        res.status(200);
+        res.statusMessage = "OK";
+        res.json({});
+      }
+    });
+  }
+});
+
+app.put("/garage/:id", (req, res) => {
+  const car = garage.find((car) => car.id == Number(req.params.id));
+  if (!car) {
+    res.status(404);
+    res.statusMessage = "NOT FOUND";
+    res.json({});
+  }
+  const updatedCar = {
+    id: Number(req.params.id),
+    name: req.body.name,
+    color: req.body.color,
+  };
+  garage.forEach((car) => {
+    if (car.id == Number(req.params.id)) {
+      car.name = updatedCar.name;
+      car.color = updatedCar.color;
+      res.status(200);
+      res.statusMessage = "OK";
+      res.json(updatedCar);
+    }
+  });
+});
+
+app.patch("/engine", (req, res) => {
   const { id, status } = req.query;
 
-  if (!id || Number.isNaN(+id) || +id <= 0) {
-    return res
-      .status(400)
-      .send('Required parameter "id" is missing. Should be a positive number');
-  }
-
-  if (!status || !/^(started)|(stopped)|(drive)$/.test(status)) {
+  if (!id || !status || !/^(started)|(stopped)|(drive)$/.test(status)) {
     return res
       .status(400)
       .send(
-        `Wrong parameter "status". Expected: "started", "stopped" or "drive". Received: "${status}"`
+        'Wrong parameters: "id" should be any positive number, "status" should be "started", "stopped" or "drive"'
       );
   }
 
-  if (!db.garage.find((car) => car.id === +id)) {
+  if (!garage.find((car) => car.id === +id)) {
     return res
       .status(404)
       .send("Car with such id was not found in the garage.");
   }
 
   const distance = 500000;
-
-  if (status === STATUS.DRIVE) {
+  if (status === "drive") {
     const velocity = state.velocity[id];
 
-    if (!velocity) {
+    if (!velocity)
       return res
         .status(404)
         .send(
           'Engine parameters for car with such id was not found in the garage. Have you tried to set engine status to "started" before?'
         );
-    }
-
-    if (state.blocked[id]) {
+    if (state.blocked[id])
       return res
         .status(429)
         .send(
           "Drive already in progress. You can't run drive for the same car twice while it's not stopped."
         );
-    }
 
     state.blocked[id] = true;
 
@@ -120,7 +182,7 @@ server.patch("/engine", (req, res) => {
     const x = req.query.speed ? +req.query.speed : (Math.random() * 2000) ^ 0;
 
     const velocity =
-      status === STATUS.STARTED ? Math.max(50, (Math.random() * 200) ^ 0) : 0;
+      status === "started" ? Math.max(50, (Math.random() * 200) ^ 0) : 0;
 
     if (velocity) {
       state.velocity[id] = velocity;
@@ -140,7 +202,113 @@ server.patch("/engine", (req, res) => {
   }
 });
 
-server.use(router);
-server.listen(PORT, () => {
-  console.log("Server is running on port", PORT);
+//winners
+app.get("/winners", (req, res) => {
+  res.append("X-Total-Count", winners.length);
+  res.append("Access-Control-Expose-Headers", "X-Total-Count");
+  const { _page, _limit, _sort, _order } = req.query;
+
+  const sortedChunk = (chunk) => {
+    if (_order == "ASC") {
+      return chunk.sort((a, b) => {
+        return a[_sort] - b[_sort];
+      });
+    } else if (_order == "DESC") {
+      return chunk.sort((a, b) => {
+        return b[_sort] - a[_sort];
+      });
+    }
+  };
+
+  res.statusMessage = "OK";
+
+  if (_page && _limit) {
+    const chunk = winners.slice((_page - 1) * _limit, _page * _limit);
+    if (_sort && _order) {
+      sortedChunk(chunk);
+      res.status(200).json(sortedChunk(chunk));
+    }
+    res.status(200).json(chunk);
+  } else {
+    res.status(200).json(winners);
+  }
+});
+
+app.get("/winners/:id", (req, res) => {
+  const car = winners.find((car) => car.id == Number(req.params.id));
+  if (!car) {
+    return res.status(400).json({
+      error: "NOT FOUND",
+    });
+  } else {
+    res.json(car);
+  }
+});
+
+app.post("/winners", (req, res) => {
+  const existingWinner = winners.find((car) => car.id == Number(req.body.id));
+
+  if (existingWinner) {
+    res.status(500);
+    res.statusMessage = "Insert failed, duplicate id";
+    return res.json({
+      error: "INTERNAL SERVER ERROR",
+    });
+  } else {
+    const winner = {
+      id: Number(req.body.id),
+      wins: Number(req.body.wins),
+      time: Number(req.body.time),
+    };
+    winners = winners.concat(winner);
+    res.statusCode = 201;
+    res.statusMessage = "CREATED";
+    res.json(winner);
+  }
+});
+
+app.delete("/winner/:id", (req, res) => {
+  const winner = winners.find((car) => car.id == Number(req.params.id));
+  if (!winner) {
+    res.status(404);
+    res.statusMessage = "NOT FOUND";
+    return res.json({});
+  } else {
+    winners.forEach((car) => {
+      if (car.id == Number(req.params.id)) {
+        winners = winners.filter((car) => car.id !== Number(req.params.id));
+        res.statusCode = 200;
+        res.statusMessage = "OK";
+        res.json({});
+      }
+    });
+  }
+});
+
+app.put("/winners/:id", (req, res) => {
+  const winner = winners.find((car) => car.id == Number(req.params.id));
+  if (!winner) {
+    res.status(404);
+    res.statusMessage = "NOT FOUND";
+    return res.json({});
+  } else if (winner) {
+    let updatedCar = {};
+    winners.forEach((car) => {
+      if (car.id == req.params.id) {
+        car.wins += 1;
+        car.time =
+          car.time < Number(req.body.time) ? car.time : Number(req.body.time);
+        updatedCar.wins = car.wins;
+        updatedCar.time = car.time;
+        updatedCar.id = car.id;
+      }
+    });
+    return res.status(200).json(updatedCar);
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`App running at ${PORT}`);
 });
