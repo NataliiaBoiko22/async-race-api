@@ -37,6 +37,12 @@ app.use(cors());
 app.use(express.json());
 
 const state = { velocity: {}, blocked: {} };
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  next();
+});
 
 app.get("/garage", (req, res) => {
   res.append("X-Total-Count", garage.length);
